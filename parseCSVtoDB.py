@@ -51,7 +51,7 @@ class Person(BaseModel):
     first_name_mi = CharField(max_length=20)
     # we need to decide which fields can be left empty!!
     phone = CharField(max_length=11, null=True)
-    email = CharField(max_length=254, null=True)
+    email = CharField(max_length=254, unique=True, null=True)
     address = CharField(max_length=100, null=True)
     city = CharField(max_length=45, null=True)
     state = CharField(max_length=2, null=True)
@@ -93,7 +93,12 @@ for row in data_to_import:
         # perhaps a data score that determines whether we keep the row
         table, column = column_data
         insertable[table][column] = entry
-    
-    person = Person.create(**insertable['person'])
-    if insertable['affiliation']:
-        affiliation = Affiliation.create(person=person, **insertable['affiliation'])
+    try:
+        with t4b_db.transaction():
+            person = Person.create(**insertable['person'])
+    except IntegrityError:
+        print "Duplicate email detected: %s" (str(insertable['person']), )
+        # put this duplicate in a file for review
+    else:
+        if insertable['affiliation']:
+            affiliation = Affiliation.create(person=person, **insertable['affiliation'])
