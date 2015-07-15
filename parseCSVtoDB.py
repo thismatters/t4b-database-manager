@@ -31,7 +31,7 @@ possible_data_columns = {'Last_Name': ('person', 'last_name'),
                          'DSA_Aus_Memb': ('affiliation', 'dsa_austin')}
 
 insert_priority = ['person', 'affiliation']
-boolean_columns = ['dsa_austin']
+boolean_columns = ['dsa_austin', 'will_volunteer', 'will_captain']
 
 natural_column_ordering = ['first_name_mi', 'last_name', 'phone', 'email', 
                            'address', 'city', 'state', 'zipcode', 
@@ -56,9 +56,9 @@ def rowInFileColumnOrdering(row):
         if column_data:
             table, column = column_data
             try: 
-                returnrow += (str(row[table][column]) + ", "  if row[table][column] else "")
+                returnrow += (str(row[table][column]) + ","  if row[table][column] else "")
             except KeyError:
-                returnrow += ", "
+                returnrow += ","
     return returnrow
 
 class BaseModel(Model):
@@ -84,7 +84,7 @@ class Person(BaseModel):
     will_captain = BooleanField(null=True)
     
     def __str__(self):
-        returnstring = "%s, " % self.person_id
+        returnstring = "%s," % self.person_id
         try:
             affiliations = Affiliation.get(Affiliation.person == self.person_id)
         except Affiliation.DoesNotExist:
@@ -92,12 +92,12 @@ class Person(BaseModel):
         for column in valid_columns_in_file:
             if column is not None: 
                 if column[0] == "person":
-                    returnstring += (str(getattr(self, column[1])) + ", " if getattr(self, column[1]) else ", ")
+                    returnstring += (str(getattr(self, column[1])) + "," if getattr(self, column[1]) else ",")
                 if column[0] == "affiliation":
                     if affiliations:
-                        returnstring += (str(getattr(affiliations, column[1])) + ", " if getattr(affiliations, column[1]) else ", ")
+                        returnstring += (str(getattr(affiliations, column[1])) + "," if getattr(affiliations, column[1]) else ",")
                     else:
-                        returnstring += ", "
+                        returnstring += ","
 
         return returnstring
 
@@ -127,13 +127,13 @@ def resolveCollision(existing_data, new_data, valid_columns):
             continue
         table, column = column_data
         if column in boolean_columns and column in return_data[table].keys() and return_data[table][column]:
-            return_data[table][column] = 1
+            return_data[table][column] = True
         if existing_data[column] is not None:
-            if return_data[table][column] != existing_data[column]:
+            if column in return_data[table].keys() and return_data[table][column] != existing_data[column]:
                 resolve_action = "report"
-                print "Conflict on column: %s" % column
+                print "Conflict on column: %s. old value: '%s', new value: '%s'" % (column, existing_data[column], return_data[table][column])
                 break
-            if return_data[table][column] is None:
+            if column not in return_data[table].keys() or return_data[table][column] is None:
                 return_data[table][column] = existing_data[column]
                 resolve_action = "update"
         else:
@@ -146,15 +146,16 @@ def resolveCollision(existing_data, new_data, valid_columns):
     return (resolve_action, return_data)
 
 def prepareCSV(db_dict, valid_columns):
-    return_value = ""
+    return_value = "%s," % db_dict['person_id']
     for column_data in valid_columns:
         if column_data is not None:
             table, column = column_data
-            return_value += "%s, " % db_dict[column]
+            return_value += "%s," % db_dict[column]
+    return return_value
 
 collisions_log = ""
 for row in data_to_import:
-    row_data = row.rstrip().split(',')
+    row_data = row.strip().split(',')
     insertable = dict()
     for table in insert_priority:
         insertable[table] = dict() 
@@ -167,12 +168,12 @@ for row in data_to_import:
     for entry, column_data in zip(row_data, valid_columns_in_file):
         if column_data is None:
             continue
-        if entry.rstrip() is '':
+        if entry.strip() is '':
             continue
         # more processing and validation here, 
         # perhaps a data score that determines whether we keep the row
         table, column = column_data
-        insertable[table][column] = entry
+        insertable[table][column] = entry.strip()
     try:
         with t4b_db.transaction():
             person = Person.create(**insertable['person'])
@@ -196,7 +197,7 @@ for row in data_to_import:
             # put this duplicate in a file for review
         if action == "update":
             ''''''
-            print "should update: %s" % data
+            # print "should update: %s" % data
             updateable_person = dict_to_model(Person, data['person'])
             updateable_person.save()
             # deal with affiliations
