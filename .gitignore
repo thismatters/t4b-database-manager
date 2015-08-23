@@ -2,3 +2,5 @@
 db.py
 *.sublime*
 *.db
+db_info.py
+BforP/*

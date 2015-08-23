@@ -4,38 +4,43 @@ from peewee import *
 # using split_by_underscores for variables
 from playhouse.shortcuts import *
 import copy
+import csv
 
 script, filename = argv  
 # could stand to have some validation on what arguments are received
 
 # establish database connection
 # put the real connection data in an unshared file
-# t4b_db = MySQLDatabase('t4b', 
-#                        host="localhost", 
-#                        user="paul", 
-#                        password="nothing")
 t4b_db = SqliteDatabase('t4b.db')  # A local sqlite database for testing!
 
 # keys: columns from spreadsheet; values: (table, column in table).
-possible_data_columns = {'Last_Name': ('person', 'last_name'), 
-                         'First_Name_MI': ('person', 'first_name_mi'), 
-                         'Phone1': ('person', 'phone'), 
-                         'Email1': ('person', 'email'),
-                         'Address': ('person', 'address'),
-                         'City': ('person', 'city'),
-                         'State': ('person', 'state'),
-                         'Zip': ('person', 'zipcode'),
-                         'Volunteer': ('person', 'will_volunteer'),
-                         'Pct': ('person', 'precinct'),
-                         'Capt': ('person', 'will_captain'),
-                         'DSA_Aus_Memb': ('affiliation', 'dsa_austin')}
+possible_data_columns = {'VUIDNO': ('voter', 'voter_id'),
+                         'PCTCOD': ('voter', 'precinct'),
+                         'LSTNAM': ('voter', 'last_name'), 
+                         'FSTNAM': ('voter', 'first_name'), 
+                         'MIDNAM': ('voter', 'middle_name'),
+                         'BLKNUM': ('voter', 'res_address_number'),
+                         'STRDIR': ('voter', 'res_address_street_direction'),
+                         'STRNAM': ('voter', 'res_address_street'),
+                         'STRTYP': ('voter', 'res_address_street_type'),
+                         'UNITYP': ('voter', 'res_address_unit_type'),
+                         'UNITNO': ('voter', 'res_address_unit_number'),
+                         'RSCITY': ('voter', 'res_address_city'),
+                         'RSTATE': ('voter', 'res_address_state'),
+                         'RZIPCD': ('voter', 'res_address_zipcode'),
+                         'MLADD1': ('voter', 'mail_address_1'),
+                         'MLADD2': ('voter', 'mail_address_2'),
+                         'MLCITY': ('voter', 'mail_address_city'),
+                         'MLSTAT': ('voter', 'mail_address_state'),
+                         'MZIPCD': ('voter', 'mail_address_zipcode'),
+                        }
 
-insert_priority = ['person', 'affiliation']
-boolean_columns = ['dsa_austin', 'will_volunteer', 'will_captain']
+insert_priority = ['voter']
+boolean_columns = list()
 
-natural_column_ordering = ['first_name_mi', 'last_name', 'phone', 'email', 
-                           'address', 'city', 'state', 'zipcode', 
-                           'will_volunteer', 'precinct', 'will_captain']
+# natural_column_ordering = ['first_name_mi', 'last_name', 'phone', 'email', 
+#                            'address', 'city', 'state', 'zipcode', 
+#                            'will_volunteer', 'precinct', 'will_captain']
 valid_columns_in_file = list()
 valid_column_headers_in_file = list()
 
@@ -67,50 +72,47 @@ class BaseModel(Model):
     class Meta:
         database = t4b_db
 
-class Person(BaseModel):
-    '''Establish the model for person table'''
-    person_id = PrimaryKeyField()
-    last_name = CharField(max_length=20, null=True)
-    first_name_mi = CharField(max_length=20, null=True)
-    # we need to decide which fields can be left empty!!
-    phone = CharField(max_length=11, null=True)
-    email = CharField(max_length=254, unique=True, null=True)
-    address = CharField(max_length=100, null=True)
-    city = CharField(max_length=45, null=True)
-    state = CharField(max_length=2, null=True)
-    zipcode = CharField(max_length=10, null=True)
+class Voter(BaseModel):
+    '''Establish the model for voter table'''
+    voter_id = BigIntegerField(primary_key=True)
     precinct = IntegerField(null=True)
-    will_volunteer = BooleanField(null=True)
-    will_captain = BooleanField(null=True)
+    last_name = CharField(max_length=40, null=True)
+    first_name = CharField(max_length=40, null=True)
+    middle_name = CharField(max_length=20, null=True)
+    res_address_number = IntegerField()
+    res_address_street_direction = CharField(max_length=5, null=True)
+    res_address_street = CharField(max_length=50)
+    res_address_street_type = CharField(max_length=10)
+    res_address_unit_type = CharField(max_length=5, null=True)
+    res_address_unit_number = CharField(max_length=5, null=True)
+    res_address_city = CharField(max_length=45)
+    res_address_state = CharField(max_length=2)
+    res_address_zipcode = IntegerField()
+    mail_address_1 = CharField(max_length=90, null=True)
+    mail_address_2 = CharField(max_length=90, null=True)
+    mail_address_city = CharField(max_length=45, null=True)
+    mail_address_state = CharField(max_length=2, null=True)
+    mail_address_zipcode = IntegerField(null=True)
+
     
     def __str__(self):
-        returnstring = "%s," % self.person_id
-        try:
-            affiliations = Affiliation.get(Affiliation.person == self.person_id)
-        except Affiliation.DoesNotExist:
-            affiliations = None
         for column in valid_columns_in_file:
             if column is not None: 
-                if column[0] == "person":
+                if column[0] == "voter":
                     returnstring += (str(getattr(self, column[1])) + "," if getattr(self, column[1]) else ",")
-                if column[0] == "affiliation":
-                    if affiliations:
-                        returnstring += (str(getattr(affiliations, column[1])) + "," if getattr(affiliations, column[1]) else ",")
-                    else:
-                        returnstring += ","
-
+                
         return returnstring
 
-class Affiliation(BaseModel):
-    person = ForeignKeyField(Person)
-    # we might consider making this a many-to-one type of table where only
-    #    one affiliation is stored per row
-    dsa_austin = BooleanField(null=True)
+# class Affiliation(BaseModel):
+#     voter = ForeignKeyField(Voter)
+#     # we might consider making this a many-to-one type of table where only
+#     #    one affiliation is stored per row
+#     dsa_austin = BooleanField(null=True)
 
 t4b_db.connect()
-t4b_db.create_tables([Person, Affiliation], safe=True)
+t4b_db.create_tables([Voter], safe=True)
 
-data_to_import = open(filename, 'r')
+data_to_import = open(filename, 'rb')
 first = True
 
 def resolveCollision(existing_data, new_data, valid_columns):
@@ -119,7 +121,7 @@ def resolveCollision(existing_data, new_data, valid_columns):
     # when new_data conflicts with existing_data, send it up for review
     # when new_data fills in gaps in existing_data, update existing_data
     return_data = copy.deepcopy(new_data)
-    return_data['person']['person_id'] = existing_data['person_id']
+    return_data['voter']['voter_id'] = existing_data['voter_id']
 
     # print new_data
     for column_data in valid_columns:
@@ -146,7 +148,7 @@ def resolveCollision(existing_data, new_data, valid_columns):
     return (resolve_action, return_data)
 
 def prepareCSV(db_dict, valid_columns):
-    return_value = "%s," % db_dict['person_id']
+    return_value = "%s," % db_dict['voter_id']
     for column_data in valid_columns:
         if column_data is not None:
             table, column = column_data
@@ -154,18 +156,21 @@ def prepareCSV(db_dict, valid_columns):
     return return_value
 
 collisions_log = ""
-for row in data_to_import:
-    row_data = row.strip().split(',')
+
+Voter._meta.auto_increment = False
+
+for row in csv.reader(data_to_import):
+    # row_data = row.strip().split(',')
     insertable = dict()
     for table in insert_priority:
         insertable[table] = dict() 
         # this could probably be made more efficient by copying a template
     if first:
-        establishColumnOrder(row_data)
+        establishColumnOrder(row)
         first = False
         continue
 
-    for entry, column_data in zip(row_data, valid_columns_in_file):
+    for entry, column_data in zip(row, valid_columns_in_file):
         if column_data is None:
             continue
         if entry.strip() is '':
@@ -175,13 +180,13 @@ for row in data_to_import:
         table, column = column_data
         insertable[table][column] = entry.strip()
     try:
+        print str(insertable)
         with t4b_db.transaction():
-            person = Person.create(**insertable['person'])
+            voter = Voter.create(**insertable['voter'])
     except IntegrityError:
-        duplicate_in_db = (Person
-                    .select(Person, Affiliation.id, Affiliation.dsa_austin)
-                    .join(Affiliation, join_type=JOIN.LEFT_OUTER)
-                    .where(Person.email == insertable['person']['email'])
+        duplicate_in_db = (Voter
+                    .select(Voter)
+                    .where(Voter.voter_id == insertable['voter']['voter_id'])
                     .dicts()
                     .get())
 
@@ -198,19 +203,15 @@ for row in data_to_import:
         if action == "update":
             ''''''
             # print "should update: %s" % data
-            updateable_person = dict_to_model(Person, data['person'])
-            updateable_person.save()
+            updateable_voter = dict_to_model(Voter, data['voter'])
+            updateable_voter.save()
             # deal with affiliations
-            if data['affiliation']:
-                updateable_affiliation = dict_to_model(Affiliation, data['affiliation'])
-                updateable_affiliation.person = data['person']['person_id']
-                if duplicate_in_db['id'] is not None:
-                    updateable_affiliation.id = duplicate_in_db['id']
-                updateable_affiliation.save()
-
-    else:
-        if insertable['affiliation']:
-            affiliation = Affiliation.create(person=person, **insertable['affiliation'])
+            # if data['affiliation']:
+            #     updateable_affiliation = dict_to_model(Affiliation, data['affiliation'])
+            #     updateable_affiliation.voter = data['voter']['voter_id']
+            #     if duplicate_in_db['id'] is not None:
+            #         updateable_affiliation.id = duplicate_in_db['id']
+            #     updateable_affiliation.save()
 
 if collisions_log != "":
     valid_column_headers_csv = ""
