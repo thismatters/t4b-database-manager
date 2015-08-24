@@ -82,7 +82,7 @@ class Voter(BaseModel):
     res_address_number = IntegerField()
     res_address_street_direction = CharField(max_length=5, null=True)
     res_address_street = CharField(max_length=50)
-    res_address_street_type = CharField(max_length=10)
+    res_address_street_type = CharField(max_length=10, null=True)
     res_address_unit_type = CharField(max_length=5, null=True)
     res_address_unit_number = CharField(max_length=5, null=True)
     res_address_city = CharField(max_length=45)
