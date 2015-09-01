@@ -3,15 +3,29 @@ from peewee import *
 # Using camelCase for functions
 # using split_by_underscores for variables
 from playhouse.shortcuts import *
+from playhouse.db_url import connect
+import os
 import copy
 import csv
 
 script, filename = argv  
 # could stand to have some validation on what arguments are received
 
-# establish database connection
-# put the real connection data in an unshared file
-t4b_db = SqliteDatabase('t4b.db')  # A local sqlite database for testing!
+DEBUG = ('root' in os.environ.get('DATABASE_URL', '')
+         or 'DEBUG' in os.environ)
+db = None
+
+if DEBUG: 
+    print "DEBUG mode ON! Writing to a local database."
+    db = SqliteDatabase('public_records_voter_ids.db')  # A local sqlite database for testing!
+else:
+    print 'DEBUG mode OFF! You are about to write to the production database.'
+    confirmation = raw_input('Is this Awesome? (y/N) ')
+    if confirmation.lower() != 'y':
+        print 'goodbye!'
+        exit()
+    db = connect(os.environ.get('PUBRECS_DATABASE_URL'))
+
 
 # keys: columns from spreadsheet; values: (table, column in table).
 possible_data_columns = {'VUIDNO': ('voter', 'voter_id'),
@@ -19,6 +33,7 @@ possible_data_columns = {'VUIDNO': ('voter', 'voter_id'),
                          'LSTNAM': ('voter', 'last_name'), 
                          'FSTNAM': ('voter', 'first_name'), 
                          'MIDNAM': ('voter', 'middle_name'),
+                         'NAMPFX': ('voter', 'name_prefix'),
                          'BLKNUM': ('voter', 'res_address_number'),
                          'STRDIR': ('voter', 'res_address_street_direction'),
                          'STRNAM': ('voter', 'res_address_street'),
@@ -33,6 +48,7 @@ possible_data_columns = {'VUIDNO': ('voter', 'voter_id'),
                          'MLCITY': ('voter', 'mail_address_city'),
                          'MLSTAT': ('voter', 'mail_address_state'),
                          'MZIPCD': ('voter', 'mail_address_zipcode'),
+                         'DATEOB': ('voter', 'date_of_birth')
                         }
 
 insert_priority = ['voter']
@@ -70,7 +86,7 @@ class BaseModel(Model):
     '''Establish the database from which all other Models will inherit'''
 
     class Meta:
-        database = t4b_db
+        database = db
 
 class Voter(BaseModel):
     '''Establish the model for voter table'''
@@ -83,8 +99,8 @@ class Voter(BaseModel):
     res_address_street_direction = CharField(max_length=5, null=True)
     res_address_street = CharField(max_length=50)
     res_address_street_type = CharField(max_length=10, null=True)
-    res_address_unit_type = CharField(max_length=5, null=True)
-    res_address_unit_number = CharField(max_length=5, null=True)
+    res_address_unit_type = CharField(max_length=10, null=True)
+    res_address_unit_number = CharField(max_length=10, null=True)
     res_address_city = CharField(max_length=45)
     res_address_state = CharField(max_length=2)
     res_address_zipcode = IntegerField()
@@ -93,8 +109,8 @@ class Voter(BaseModel):
     mail_address_city = CharField(max_length=45, null=True)
     mail_address_state = CharField(max_length=2, null=True)
     mail_address_zipcode = IntegerField(null=True)
+    date_of_birth = DateField()
 
-    
     def __str__(self):
         for column in valid_columns_in_file:
             if column is not None: 
@@ -109,8 +125,8 @@ class Voter(BaseModel):
 #     #    one affiliation is stored per row
 #     dsa_austin = BooleanField(null=True)
 
-t4b_db.connect()
-t4b_db.create_tables([Voter], safe=True)
+db.connect()
+db.create_tables([Voter], safe=True)
 
 data_to_import = open(filename, 'rb')
 first = True
@@ -159,8 +175,11 @@ collisions_log = ""
 
 Voter._meta.auto_increment = False
 
+records = 0
+
 for row in csv.reader(data_to_import):
     # row_data = row.strip().split(',')
+    records += 1
     insertable = dict()
     for table in insert_priority:
         insertable[table] = dict() 
@@ -178,10 +197,17 @@ for row in csv.reader(data_to_import):
         # more processing and validation here, 
         # perhaps a data score that determines whether we keep the row
         table, column = column_data
+        if column == 'date_of_birth':
+            # reformat from m/d/y -> YYYY-MM-DD
+            month, day, year = entry.split('/')
+            entry = "%04d-%02d-%02d" % (int(year), int(month), int(day))
         insertable[table][column] = entry.strip()
     try:
-        print str(insertable)
-        with t4b_db.transaction():
+        if DEBUG:
+            print str(insertable)
+        else:
+            print 'record: %d' % (records, )
+        with db.transaction():
             voter = Voter.create(**insertable['voter'])
     except IntegrityError:
         duplicate_in_db = (Voter
@@ -189,7 +215,6 @@ for row in csv.reader(data_to_import):
                     .where(Voter.voter_id == insertable['voter']['voter_id'])
                     .dicts()
                     .get())
-
         action, data = resolveCollision(duplicate_in_db, insertable, valid_columns_in_file)
         if action == "report":
             formatted_new_duplicate = rowInFileColumnOrdering(insertable)
